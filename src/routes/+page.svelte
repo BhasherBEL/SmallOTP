@@ -4,6 +4,8 @@
     import VerbatimInput from "$lib/components/verbatimInput.svelte";
     import { Icon, MagnifyingGlass } from "svelte-hero-icons";
     import { onMount } from "svelte";
+		import { fetchRoutesAPI } from "$lib/api/opentripplanner";
+    import Itinary from "$lib/components/itinerary.svelte";
 
     const tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
@@ -22,7 +24,8 @@
 		let from = undefined as [number, number] | undefined;
 		let to = undefined as [number, number] | undefined;
 		let leafletMap: LeafletMap;
-		let mode = 'bike';
+		let mode: string;
+		let itineraries = [];
 
 		function setFrom(lat: number, lon: number) {
 			from = [lat, lon];
@@ -34,10 +37,16 @@
 			buildHash();
 		}
 
+		function setMode(m: string) {
+			mode = m;
+			buildHash();
+		}
+
 		function buildHash() {
 			const parts = [];
 			if (from) parts.push(`from=${from[0]},${from[1]}`);
 			if (to) parts.push(`to=${to[0]},${to[1]}`);
+			if (mode) parts.push(`mode=${mode}`);
 			document.location.hash = parts.join('&');
 		}
 
@@ -48,8 +57,17 @@
 				if (!part.includes('=')) continue;
 				const [key, value] = part.split('=');
 				const [lat, lon] = value.split(',').map(Number);
-				if (key === 'from') setFrom(lat, lon);
-				else if (key === 'to') setTo(lat, lon);
+				if (key === 'from') from = [lat, lon];
+				else if (key === 'to') to = [lat, lon];
+				else if (key === 'mode') mode = value;
+			}
+		}
+
+		async function onTrip() {
+			if (!from || !to || !mode) return;
+			const result = await fetchRoutesAPI(from, to, mode, new Date());
+			if(result && result.plan && result.plan.itineraries) {
+				itineraries = result.plan.itineraries;
 			}
 		}
 
@@ -73,20 +91,28 @@
 			<VerbatimInput value={from} placeholder="From" callback={(f) => setFrom(f.lat, f.lon)} />
 			<VerbatimInput value={to} placeholder="To" callback={(t) => setTo(t.lat, t.lon)} />
 			<div class="join w-full">
-				<button class="join-item btn grow" class:btn-primary={mode === 'bike'} on:click={() => mode = 'bike'}>
+				<button class="join-item btn grow" class:btn-primary={mode === 'BICYCLE'} on:click={() => setMode('BICYCLE')}>
 					<img src="/icons/directions_bike.svg" alt="Bike" class="w-8 h-8 filter invert" />
 				</button>
-				<button class="join-item btn grow" class:btn-primary={mode === 'walk'} on:click={() => mode = 'walk'}>
+				<button class="join-item btn grow" class:btn-primary={mode === 'WALK'} on:click={() => setMode('WALK')}>
 					<img src="/icons/directions_walk.svg" alt="Walk" class="w-8 h-8 filter invert" />
 				</button>
-				<button class="join-item btn grow" class:btn-primary={mode === 'transports'} on:click={() => mode = 'transports'}>
+				<button class="join-item btn grow" class:btn-primary={mode === 'TRANSIT'} on:click={() => setMode('TRANSIT')}>
 					<img src="/icons/directions_bus.svg" alt="Transports" class="w-8 h-8 filter invert" />
 				</button>
 			</div>
-			<button class="btn btn-primary w-full">
+			<button class="btn btn-primary w-full" on:click={onTrip}>
 				<Icon src="{MagnifyingGlass}" size="20" />
 			</button>
 		</div>
+		{#if itineraries.length > 0}
+			<div class="mx-4 my-2 space-y-2">
+				<h2 class="text-2xl font-bold">Itineraries</h2>
+				{#each itineraries as itinerary}
+					<Itinary {itinerary} />
+				{/each}
+				</div>
+		{/if}
 	</div>
 	<LeafletMap bind:this={leafletMap} options={mapOptions}>
 			<TileLayer url={tileUrl} options={tileLayerOptions}/>
